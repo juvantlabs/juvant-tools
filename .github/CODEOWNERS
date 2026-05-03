@@ -1,0 +1,8 @@
+# CODEOWNERS — juvant-tools
+#
+# Toolbox repos do not generate CODEOWNERS from a github_user_map at
+# adoption time the way framework templates do. Owners are listed here
+# directly. Update when contributor-base grows.
+
+# Default — primary maintainer
+* @juvantlabs

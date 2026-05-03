@@ -1,0 +1,50 @@
+name: juvant-tools lint
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Markdown lint
+        run: npm install -g markdownlint-cli2
+
+      - name: Markdown lint
+        run: markdownlint-cli2 "**/*.md" "#node_modules" "#.git"
+        continue-on-error: true
+        # Light-touch defaults for toolbox; tighten when a primary
+        # language emerges and per-tool standards stabilize.
+
+      - name: Detect tracked secrets (defense in depth)
+        run: |
+          OFFENDERS=$(git grep -nE '(BEGIN (RSA |EC )?PRIVATE KEY|ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{82,}|sk-[A-Za-z0-9]{40,}|xox[abrs]-[A-Za-z0-9-]+)' -- ':!*.md' || true)
+          if [ -n "$OFFENDERS" ]; then
+            echo "Tracked secrets detected:"
+            echo "$OFFENDERS"
+            exit 1
+          fi
+          echo "OK — no tracked secrets detected"
+
+  smoke-test:
+    runs-on: ubuntu-latest
+    if: false  # disabled until first tool lands; re-enable per spec
+    steps:
+      - uses: actions/checkout@v4
+      - name: Smoke test each tool
+        run: |
+          # Per toolbox.md spec: "smoke test where smoke tests exist
+          # (run any tool with --help and assert exit 0)". Enable this
+          # job once tools are present.
+          echo "No tools to smoke-test yet (scaffold-only)."
