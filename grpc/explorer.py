@@ -6,20 +6,26 @@ or by compiling local .proto files), lets you pick a method, prepare a
 JSON payload in your editor of choice, invoke the method, and pretty-prints
 the response.
 
-Two discovery modes:
+Discovery (auto-fallback chain since v0.2):
 
-- **Reflection** (default): if the server exposes the
-  `grpc.reflection.v1alpha.ServerReflection` service, discover services +
-  fetch their `FileDescriptorProto` over the wire.
-- **Proto-dir** (fallback): pass `--proto-dir PATH` to compile every
-  `.proto` under that directory locally with `grpc_tools.protoc`, then
-  use the resulting descriptors. Required for servers with reflection
-  disabled.
+  1. Try server reflection (`grpc.reflection.v1alpha.ServerReflection`).
+  2. If reflection fails (UNIMPLEMENTED, channel error, zero services)
+     and `--proto-dir PATH` is supplied, compile every `.proto` under
+     PATH with `grpc_tools.protoc` and use the resulting descriptors.
+  3. If both fail (or `--proto-dir` not supplied), exit with a clear
+     error.
 
-Two invocation modes (auto-detected):
+  `--no-reflection` skips step 1 entirely and goes straight to
+  proto-dir mode (requires `--proto-dir`). Useful when local .proto
+  files are more up-to-date than the server's exposed schema, or when
+  the server's reflection cooperates only partially.
+
+Invocation modes (auto-detected):
 
 - **Scripted**: pass `--service`, `--method`, and (`--payload` or
-  `--payload-file`) — runs end-to-end without prompts.
+  `--payload-file`) — runs end-to-end without prompts. For streaming
+  request methods (client-streaming, bidi-streaming), the payload
+  must be a JSON array; each element is one message in the stream.
 - **Interactive** (default): walks numbered menus to pick service +
   method, then opens an editor on a JSON template. Requires a TTY.
 
@@ -32,22 +38,31 @@ Editor discovery (git-style fallback chain):
   5. File mode                   (`--no-editor`, or auto when no editor found):
                                   prints the tempfile path, waits for Enter
 
-Streaming support (v0.1):
+Streaming support (v0.2):
+
   - unary-unary       ✓
-  - server-streaming  ✓
-  - client-streaming  not yet (v0.2)
-  - bidi-streaming    not yet (v0.2)
+  - server-streaming  ✓ (reads to EOF, prints each message)
+  - client-streaming  ✓ (sends every element of the JSON array, then reads one response)
+  - bidi-streaming    ✓ (sends every element, then reads to EOF — no interleaving)
 
 Usage:
   # Interactive, with reflection
   python3 grpc/explorer.py --host localhost:50051
 
-  # Interactive, with local .proto files
+  # Interactive, with local .proto files (used as fallback if reflection fails)
   python3 grpc/explorer.py --host api.example.com:443 --tls --proto-dir ./protos
 
-  # Scripted
+  # Force proto-dir mode (skip reflection)
+  python3 grpc/explorer.py --host localhost:50051 --no-reflection --proto-dir ./protos
+
+  # Scripted (unary)
   python3 grpc/explorer.py --host localhost:50051 \\
     --service my.pkg.MyService --method GetThing --payload '{"id":"abc"}'
+
+  # Scripted (client-streaming or bidi — JSON array of messages)
+  python3 grpc/explorer.py --host localhost:50051 \\
+    --service my.pkg.MyService --method UploadStream \\
+    --payload '[{"chunk":"a"},{"chunk":"b"},{"chunk":"c"}]'
 
   # Auth via per-call metadata
   python3 grpc/explorer.py --host api.example.com:443 --tls \\
@@ -319,17 +334,20 @@ def method_full_path(service_full_name: str, method_name: str) -> str:
     return f"/{service_full_name}/{method_name}"
 
 
+def method_kind(method_desc) -> str:
+    """Return one of: unary-unary, server-streaming, client-streaming, bidi-streaming."""
+    if method_desc.client_streaming and method_desc.server_streaming:
+        return "bidi-streaming"
+    if method_desc.client_streaming:
+        return "client-streaming"
+    if method_desc.server_streaming:
+        return "server-streaming"
+    return "unary-unary"
+
+
 def method_signature_str(method_desc) -> str:
     """Return a one-liner like 'unary-unary  Request → Response'."""
-    if method_desc.client_streaming and method_desc.server_streaming:
-        kind = "bidi-streaming"
-    elif method_desc.client_streaming:
-        kind = "client-streaming"
-    elif method_desc.server_streaming:
-        kind = "server-streaming"
-    else:
-        kind = "unary-unary"
-    return f"{kind:18}  {method_desc.input_type.full_name}  →  {method_desc.output_type.full_name}"
+    return f"{method_kind(method_desc):18}  {method_desc.input_type.full_name}  →  {method_desc.output_type.full_name}"
 
 
 # =====================================================================
@@ -482,32 +500,42 @@ def edit_payload_in_editor(template_json: str, override: str | None, no_editor: 
 def invoke(
     channel,
     method_full_path_str: str,
-    request_msg,
+    request_msgs: list,
     response_class,
     metadata: tuple[tuple[str, str], ...],
-    server_streaming: bool,
+    kind: str,
 ):
-    """Invoke a unary-unary or unary-server-streaming method.
-    Returns either a single response message or an iterator of messages."""
+    """Invoke a method according to its kind. Returns a response message
+    (unary-unary, client-streaming) or an iterator of messages
+    (server-streaming, bidi-streaming).
+
+    request_msgs is always a list of request messages:
+      - unary-unary / server-streaming → list of length 1, only [0] is sent
+      - client-streaming / bidi-streaming → all elements are sent in order
+
+    For bidi, this implementation sends all requests first (no interleaving),
+    then reads responses to EOF. Adequate for an exploration tool; not a
+    full bidi simulator.
+    """
     serializer = lambda m: m.SerializeToString()  # noqa: E731
     deserializer = lambda d: response_class.FromString(d)  # noqa: E731
 
-    if server_streaming:
-        rpc = channel.unary_stream(
-            method_full_path_str,
-            request_serializer=serializer,
-            response_deserializer=deserializer,
-        )
-    else:
-        rpc = channel.unary_unary(
-            method_full_path_str,
-            request_serializer=serializer,
-            response_deserializer=deserializer,
-        )
-    return rpc(request_msg, metadata=metadata)
+    if kind == "unary-unary":
+        rpc = channel.unary_unary(method_full_path_str, request_serializer=serializer, response_deserializer=deserializer)
+        return rpc(request_msgs[0], metadata=metadata)
+    if kind == "server-streaming":
+        rpc = channel.unary_stream(method_full_path_str, request_serializer=serializer, response_deserializer=deserializer)
+        return rpc(request_msgs[0], metadata=metadata)
+    if kind == "client-streaming":
+        rpc = channel.stream_unary(method_full_path_str, request_serializer=serializer, response_deserializer=deserializer)
+        return rpc(iter(request_msgs), metadata=metadata)
+    if kind == "bidi-streaming":
+        rpc = channel.stream_stream(method_full_path_str, request_serializer=serializer, response_deserializer=deserializer)
+        return rpc(iter(request_msgs), metadata=metadata)
+    raise click.ClickException(f"Unknown method kind: {kind}")
 
 
-def render_response(resp, server_streaming: bool) -> None:
+def render_response(resp, kind: str) -> None:
     _, _, _, _, MessageToJson, _, _ = _import_grpc()
 
     def render_one(msg) -> None:
@@ -515,7 +543,8 @@ def render_response(resp, server_streaming: bool) -> None:
 
     click.echo("")
     click.echo("=== Response ===")
-    if server_streaming:
+    is_streaming_response = kind in ("server-streaming", "bidi-streaming")
+    if is_streaming_response:
         count = 0
         try:
             for msg in resp:
@@ -526,6 +555,74 @@ def render_response(resp, server_streaming: bool) -> None:
             click.echo(f"--- End of stream ({count} message{'s' if count != 1 else ''}) ---")
     else:
         render_one(resp)
+
+
+def parse_payload_to_msgs(payload_str: str, request_class, request_streaming: bool) -> list:
+    """Parse a JSON payload into a list of request messages.
+
+    For streaming requests, expect a JSON array; each element becomes one
+    request message. For unary requests, expect a JSON object.
+    """
+    _, _, _, _, _, Parse, ParseError = _import_grpc()
+
+    if request_streaming:
+        try:
+            arr = json.loads(payload_str)
+        except json.JSONDecodeError as e:
+            raise click.ClickException(
+                f"Streaming request expects a JSON array of messages; payload is not valid JSON: {e}"
+            ) from e
+        if not isinstance(arr, list):
+            raise click.ClickException(
+                f"Streaming request expects a JSON array; got {type(arr).__name__}. "
+                "Each array element should be one request message."
+            )
+        if not arr:
+            raise click.ClickException(
+                "Streaming request payload is an empty array — at least one message required."
+            )
+        msgs = []
+        for i, elem in enumerate(arr):
+            try:
+                msg = Parse(json.dumps(elem), request_class(), ignore_unknown_fields=False)
+            except ParseError as e:
+                raise click.ClickException(
+                    f"Invalid JSON for stream message #{i+1} of {request_class.DESCRIPTOR.full_name}: {e}"
+                ) from e
+            msgs.append(msg)
+        return msgs
+
+    # Unary request — payload must be a JSON object, not an array
+    try:
+        parsed = json.loads(payload_str)
+    except json.JSONDecodeError as e:
+        raise click.ClickException(
+            f"Invalid JSON payload for {request_class.DESCRIPTOR.full_name}: {e}"
+        ) from e
+    if isinstance(parsed, list):
+        raise click.ClickException(
+            f"Unary-request method expects a JSON object; got an array. "
+            f"Drop the outer brackets or check that you're invoking the right method."
+        )
+    try:
+        return [Parse(payload_str, request_class(), ignore_unknown_fields=False)]
+    except ParseError as e:
+        raise click.ClickException(
+            f"Invalid JSON payload for {request_class.DESCRIPTOR.full_name}: {e}"
+        ) from e
+
+
+def build_payload_template_json(m_desc, pool) -> tuple[str, str]:
+    """Return (template_json, hint) — the JSON template to seed the editor
+    with, plus a one-line hint about format expectations."""
+    msg_template = build_template_dict(m_desc.input_type, pool)
+    if m_desc.client_streaming:
+        # JSON array of messages — start with a single default message
+        return (
+            json.dumps([msg_template], indent=2),
+            "Streaming-request method: payload is a JSON ARRAY. Add more elements for additional stream messages.",
+        )
+    return (json.dumps(msg_template, indent=2), "")
 
 
 # =====================================================================
@@ -571,19 +668,11 @@ def interactive_flow(
         click.echo(f"\n[*] Method signature:")
         click.echo(f"      {method_signature_str(m_desc)}")
 
-        if m_desc.client_streaming:
-            click.echo(
-                "\n[!] Client-streaming and bidi-streaming methods are not supported in v0.1.\n"
-                "    Pick another method or invoke this one via grpcurl."
-            )
-            if not click.confirm("\nPick another method?", default=True):
-                return
-            continue
-
         # --- Edit payload ---
-        template_dict = build_template_dict(m_desc.input_type, pool)
-        template_json = json.dumps(template_dict, indent=2)
+        template_json, hint = build_payload_template_json(m_desc, pool)
         click.echo(f"\n[*] Request type: {m_desc.input_type.full_name}")
+        if hint:
+            click.echo(f"[*] {hint}")
         click.echo("[*] Opening editor with a pre-filled JSON template…")
         payload_str = edit_payload_in_editor(template_json, editor_override, no_editor)
 
@@ -616,7 +705,7 @@ def execute_invocation(
     payload_str: str,
     metadata: tuple[tuple[str, str], ...],
 ) -> None:
-    grpc, _, _, _, _, Parse, ParseError = _import_grpc()
+    grpc, *_ = _import_grpc()
 
     try:
         m_desc = method_descriptor(pool, service, method)
@@ -627,34 +716,94 @@ def execute_invocation(
     if m_desc is None:
         raise click.ClickException(f"Method {method} not found on service {service}")
 
-    if m_desc.client_streaming:
-        raise click.ClickException(
-            "Client-streaming and bidi-streaming methods are not supported in v0.1."
-        )
-
+    kind = method_kind(m_desc)
     request_class = message_class_for(pool, m_desc.input_type.full_name)
     response_class = message_class_for(pool, m_desc.output_type.full_name)
-
-    try:
-        request_msg = Parse(payload_str, request_class(), ignore_unknown_fields=False)
-    except ParseError as e:
-        raise click.ClickException(f"Invalid JSON payload for {m_desc.input_type.full_name}: {e}") from e
+    request_msgs = parse_payload_to_msgs(payload_str, request_class, m_desc.client_streaming)
 
     full_path = method_full_path(service, method)
-    click.echo(f"\n[*] Invoking {full_path}")
+    click.echo(f"\n[*] Invoking {full_path}  [{kind}]")
+    if m_desc.client_streaming:
+        click.echo(f"[*] Sending {len(request_msgs)} request message(s).")
     try:
         resp = invoke(
             channel=channel,
             method_full_path_str=full_path,
-            request_msg=request_msg,
+            request_msgs=request_msgs,
             response_class=response_class,
             metadata=metadata,
-            server_streaming=m_desc.server_streaming,
+            kind=kind,
         )
-        render_response(resp, m_desc.server_streaming)
+        render_response(resp, kind)
     except grpc.RpcError as e:
         click.echo(f"\n[!] RPC failed: {e.code()} — {e.details()}", err=True)
         raise SystemExit(1) from e
+
+
+# =====================================================================
+# Discovery orchestrator (auto-fallback reflection → proto-dir, since v0.2)
+# =====================================================================
+
+def _try_reflection(channel) -> tuple[Any | None, list[str] | None, str | None]:
+    """Try to discover services via reflection.
+
+    Returns:
+      (pool, services, None)         on success
+      (None,  None,     reason)      on failure (caller decides whether to fall back)
+    """
+    grpc, *_ = _import_grpc()
+    from grpc_reflection.v1alpha import reflection_pb2_grpc  # noqa: PLC0415
+
+    stub = reflection_pb2_grpc.ServerReflectionStub(channel)
+    try:
+        services = reflection_list_services(stub)
+    except grpc.RpcError as e:
+        return None, None, f"{e.code().name}: {e.details() or '(no details)'}"
+    except Exception as e:  # noqa: BLE001
+        return None, None, f"{type(e).__name__}: {e}"
+
+    if not services:
+        return None, None, "reflection returned zero services"
+
+    all_files: dict[str, Any] = {}
+    for svc in services:
+        all_files.update(reflection_fetch_descriptors(stub, svc))
+    pool = build_pool_from_descriptors(all_files)
+    return pool, services, None
+
+
+def discover(
+    channel,
+    proto_dir: Path | None,
+    no_reflection: bool,
+) -> tuple[Any, list[str]]:
+    """Auto-fallback discovery: reflection first, proto-dir if needed.
+
+    --no-reflection skips step 1 entirely. Requires --proto-dir in that case.
+    """
+    if no_reflection:
+        if proto_dir is None:
+            raise click.UsageError("--no-reflection requires --proto-dir PATH")
+        click.echo(f"[*] Discovery: proto-dir mode ({proto_dir})  [reflection skipped]")
+        return compile_protos(proto_dir)
+
+    click.echo("[*] Discovery: trying reflection…")
+    pool, services, fail_reason = _try_reflection(channel)
+    if pool is not None and services is not None:
+        click.echo("[*] Discovery: reflection succeeded.")
+        return pool, services
+
+    # Reflection failed — fall back to proto-dir if available
+    if proto_dir is not None:
+        click.echo(f"[!] Reflection unavailable ({fail_reason}); falling back to proto-dir mode.")
+        click.echo(f"[*] Discovery: proto-dir mode ({proto_dir})")
+        return compile_protos(proto_dir)
+
+    raise click.ClickException(
+        f"Reflection unavailable ({fail_reason}) and no --proto-dir PATH supplied.\n"
+        "Either enable reflection on the server, or pass --proto-dir to compile "
+        "local .proto files instead."
+    )
 
 
 # =====================================================================
@@ -675,7 +824,10 @@ def execute_invocation(
 @click.option("--metadata", "metadata_items", multiple=True, metavar="KEY=VAL",
               help="Per-call metadata header (repeatable). Example: --metadata authorization='Bearer …'.")
 @click.option("--proto-dir", type=click.Path(exists=True, file_okay=False, path_type=Path),
-              help="Compile .proto files in this directory instead of using server reflection.")
+              help="Compile .proto files in this directory. Used as fallback when reflection fails, "
+                   "or as the sole source when --no-reflection is set.")
+@click.option("--no-reflection", is_flag=True, default=False,
+              help="Skip server reflection entirely; require --proto-dir.")
 @click.option("--service", metavar="FULL_NAME",
               help="Service full name (e.g. my.pkg.MyService). Required for scripted mode.")
 @click.option("--method", metavar="NAME",
@@ -696,6 +848,7 @@ def main(
     client_key: Path | None,
     metadata_items: tuple[str, ...],
     proto_dir: Path | None,
+    no_reflection: bool,
     service: str | None,
     method: str | None,
     payload: str | None,
@@ -703,7 +856,7 @@ def main(
     editor: str | None,
     no_editor: bool,
 ) -> None:
-    """Interactive gRPC explorer with reflection or .proto-dir discovery."""
+    """Interactive gRPC explorer with reflection / .proto-dir discovery."""
     if payload and payload_file:
         raise click.UsageError("--payload and --payload-file are mutually exclusive")
 
@@ -713,39 +866,10 @@ def main(
     channel = build_channel(host, tls, ca_cert, client_cert, client_key)
     click.echo(f"[*] Connected to {host} ({'TLS' if tls else 'insecure'})")
 
-    # --- Discover services ---
-    if proto_dir is not None:
-        click.echo(f"[*] Discovery: proto-dir mode ({proto_dir})")
-        pool, services = compile_protos(proto_dir)
-        if not services:
-            raise click.ClickException(
-                f"No services found in {proto_dir}. Make sure your .proto files "
-                "define at least one `service { ... }`."
-            )
-    else:
-        click.echo("[*] Discovery: reflection mode")
-        from grpc_reflection.v1alpha import reflection_pb2_grpc  # noqa: PLC0415
-
-        stub = reflection_pb2_grpc.ServerReflectionStub(channel)
-        try:
-            services = reflection_list_services(stub)
-        except Exception as e:  # noqa: BLE001
-            raise click.ClickException(
-                f"Reflection failed: {e}\n"
-                "If the server has reflection disabled, supply --proto-dir PATH "
-                "to compile local .proto files instead."
-            ) from e
-
-        if not services:
-            raise click.ClickException("Reflection returned zero services. Server has no exposed services?")
-
-        # Build a unified pool from all reflected services
-        all_files: dict[str, Any] = {}
-        for svc in services:
-            files = reflection_fetch_descriptors(stub, svc)
-            all_files.update(files)
-        pool = build_pool_from_descriptors(all_files)
-
+    # --- Discover services (auto-fallback) ---
+    pool, services = discover(channel, proto_dir, no_reflection)
+    if not services:
+        raise click.ClickException("No services discovered.")
     click.echo(f"[*] Discovered {len(services)} service(s).")
 
     # --- Mode selection: scripted if all required pieces present, else interactive ---

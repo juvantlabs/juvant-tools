@@ -7,11 +7,12 @@ spec at `juvantlabs/handbook`.
 
 ## Status
 
-**v0.1 — first tool shipped.** The
-[`scaffold mcp-server`](juvant_tools/scaffolders/mcp_server/README.md)
-command generates a new `juvantlabs/<vendor>-mcp-server` repo skeleton
-conforming to the [handbook MCP server spec](https://github.com/juvantlabs/handbook/blob/main/docs/repo-types/mcp-server.md).
-More tools land via PR.
+Active. **One packaged subcommand** (the MCP server scaffolder, at v0.2 —
+generates all 15 spec-required files including CI workflows + ESLint
+flat config + vitest coverage thresholds; ships with three CI grep
+checks that pass green on a fresh scaffold) plus **six standalone
+debug/dev scripts** in `audio/`, `stt/`, `cdp/`, `grpc/`. Tools land
+via PR; new categories are cheap to add when there's a real need.
 
 ## Quick start
 
@@ -52,7 +53,7 @@ python -m juvant_tools.cli scaffold mcp-server
 | [`stt/azure_stt.py`](stt/README.md) | STT | Transcribe any audio/video file using Azure Speech SDK with optional speaker diarization. Streams results to file as they arrive. |
 | [`cdp/http_spy.py`](cdp/README.md) | CDP | Chrome DevTools Protocol HTTP spy — capture HTTP requests/responses on a live browser tab, filtered by URL substring, with UUID/ID extraction from JSON bodies. |
 | [`cdp/websocket_spy.py`](cdp/README.md) | CDP | Chrome DevTools Protocol WebSocket spy — capture every WS frame (incl. iframe sub-targets) on a live browser tab. UTF-8 / JSON auto-decode; hex fallback for binary. |
-| [`grpc/explorer.py`](grpc/README.md) | gRPC | Interactive gRPC explorer — connect to a server, discover services via reflection or local `.proto` files, pick a method, edit the request JSON in your editor, invoke, see the response. Unary + server-streaming. |
+| [`grpc/explorer.py`](grpc/README.md) | gRPC | Interactive gRPC explorer — connect to a server, discover services via reflection (auto-fallback to `--proto-dir`), pick a method, edit the request JSON in your editor, invoke, pretty-print the response. All four method kinds: unary-unary, server-streaming, client-streaming, bidi-streaming. |
 
 ## Repo layout — packaged vs. unpackaged tools
 
@@ -61,14 +62,16 @@ The repo deliberately holds two kinds of tool side-by-side:
 - **`juvant_tools/`** (snake_case, the importable Python package) — code
   we want versioned, importable, and invokable as `juvant-tools <subcmd>`.
   Goes through `pyproject.toml`, earns CHANGELOG entries + semver, and
-  (eventually) a PyPI release. Today: just the scaffolders. Future
-  packaged tools land here as new subcommands.
-- **Top-level category directories** (e.g. `observability/`, `audit/`,
-  `disclosure-helpers/` — none yet, illustrative) — standalone scripts /
-  quick helpers run directly via `git clone` + `./category/script`. No
-  semver, no install step, possibly in different languages (bash, TS,
-  etc.). When a script earns import-by-others or subcommand status, it
-  migrates into `juvant_tools/`.
+  (eventually) a PyPI release. Today: just `scaffolders/mcp_server/`.
+  Future packaged tools land here as new subcommands (additional
+  scaffolders for the other repo types are the obvious next candidates).
+- **Top-level category directories** (`audio/`, `stt/`, `cdp/`, `grpc/`
+  today; future categories like `observability/`, `audit/`,
+  `disclosure-helpers/` arrive when there's a real script to put in
+  them) — standalone scripts / quick helpers run directly via `git clone`
+  + `python3 <category>/<script>.py`. No semver, no install step, no
+  forced language uniformity. When a script earns import-by-others or
+  subcommand status, it migrates into `juvant_tools/`.
 
 The repo name (`juvant-tools`, kebab-case) and the package name
 (`juvant_tools`, snake_case) deliberately differ — standard Python

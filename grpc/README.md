@@ -19,30 +19,38 @@ These dependencies are intentionally NOT pulled in by `juvant-tools`
 itself — `grpcio` is a heavy install (~200 MB) and most users only
 need it ad-hoc.
 
-## Discovery modes
+## Discovery (auto-fallback chain)
 
-### Reflection (default)
+The explorer tries discovery in this order:
 
-If the gRPC server exposes the
-`grpc.reflection.v1alpha.ServerReflection` service, the explorer
-discovers services and fetches their `FileDescriptorProto`s over the
-wire. No local `.proto` files needed.
+1. **Server reflection** (default) — if the server exposes
+   `grpc.reflection.v1alpha.ServerReflection`, it discovers services
+   and fetches their `FileDescriptorProto`s over the wire. No local
+   `.proto` files needed.
+2. **Proto-dir fallback** — if reflection fails (UNIMPLEMENTED, channel
+   error, zero services) and `--proto-dir PATH` is supplied, it
+   compiles every `.proto` under PATH with `grpc_tools.protoc` and
+   uses the resulting descriptors.
+3. **Hard fail** — if both above fail (or no `--proto-dir` was given),
+   exits with a clear error message.
 
 ```bash
+# Reflection only (most dev/staging gRPC servers)
 python3 grpc/explorer.py --host localhost:50051
+
+# Reflection with proto-dir as automatic fallback
+python3 grpc/explorer.py --host api.example.com:443 --tls --proto-dir ./protos
 ```
 
-Most modern gRPC servers in dev/staging have reflection on. Production
-sometimes turns it off — fall back to proto-dir mode below.
+### Skip reflection entirely (`--no-reflection`)
 
-### Proto-dir (fallback for servers without reflection)
-
-Pass a directory containing your `.proto` files. The explorer compiles
-them with `grpc_tools.protoc` to a tempdir, imports the generated
-`_pb2.py` modules, and uses the resulting descriptors.
+Useful when local `.proto` files are more up-to-date than the server's
+reflected schema, or when the server's reflection cooperates only
+partially. Requires `--proto-dir`.
 
 ```bash
-python3 grpc/explorer.py --host api.example.com:443 --tls --proto-dir ./protos
+python3 grpc/explorer.py --host localhost:50051 \
+  --no-reflection --proto-dir ./protos
 ```
 
 ## Invocation modes (auto-detected)
@@ -62,6 +70,7 @@ Pass `--service`, `--method`, and one of `--payload` / `--payload-file`.
 The explorer skips menus and editors:
 
 ```bash
+# Unary request — payload is a JSON object
 python3 grpc/explorer.py --host localhost:50051 \
   --service my.pkg.MyService \
   --method GetThing \
@@ -69,6 +78,16 @@ python3 grpc/explorer.py --host localhost:50051 \
 ```
 
 ```bash
+# Streaming request (client-streaming or bidi-streaming) — payload is a JSON array,
+# each element is one request message in the stream
+python3 grpc/explorer.py --host localhost:50051 \
+  --service my.pkg.MyService \
+  --method UploadStream \
+  --payload '[{"chunk":"a"},{"chunk":"b"},{"chunk":"c"}]'
+```
+
+```bash
+# Payload from file (handy for large or multi-line JSON)
 python3 grpc/explorer.py --host localhost:50051 \
   --service my.pkg.MyService \
   --method GetThing \
@@ -118,15 +137,17 @@ python3 grpc/explorer.py --host secure.example.com:443 --tls \
 
 ## Streaming support
 
-| Method type | v0.1 |
-|---|---|
-| unary-unary | ✓ |
-| server-streaming | ✓ (reads until end-of-stream, prints each message) |
-| client-streaming | not yet (v0.2) |
-| bidi-streaming | not yet (v0.2) |
+| Method type | Status | Behavior |
+|---|---|---|
+| unary-unary | ✓ | One request, one response. |
+| server-streaming | ✓ | One request, then the explorer reads to EOF and prints each response message. |
+| client-streaming | ✓ | Sends every element of the JSON array request payload, then reads the single response. |
+| bidi-streaming | ✓ | Sends every element of the JSON array, then reads to EOF. **No interleaving** — all requests go before any responses are read. Adequate for exploration; not a full bidi simulator. |
 
-Pick a client-streaming or bidi-streaming method in interactive mode
-and the explorer prints a clear message and returns to the menu.
+For streaming-request methods (client-streaming or bidi-streaming), the
+payload must be a JSON array (`[{...}, {...}, ...]`); each element is
+one message in the request stream. In interactive mode, the editor
+opens a JSON array template pre-filled with one default message.
 
 ## Quick start examples
 
@@ -138,14 +159,23 @@ python3 grpc/explorer.py --host localhost:50051
 python3 grpc/explorer.py --host api.example.com:443 --tls \
   --metadata authorization='Bearer …'
 
-# Server without reflection — supply local .proto dir
+# Server without reflection — supply local .proto dir as fallback
 python3 grpc/explorer.py --host api.example.com:443 --tls \
   --proto-dir ./vendor-protos
 
-# Scripted invocation (no menus, no editor)
+# Force proto-dir mode (skip reflection)
+python3 grpc/explorer.py --host localhost:50051 \
+  --no-reflection --proto-dir ./vendor-protos
+
+# Scripted unary invocation (no menus, no editor)
 python3 grpc/explorer.py --host localhost:50051 \
   --service helloworld.Greeter --method SayHello \
   --payload '{"name":"world"}'
+
+# Scripted client-streaming or bidi-streaming
+python3 grpc/explorer.py --host localhost:50051 \
+  --service helloworld.Greeter --method CollectHello \
+  --payload '[{"name":"alice"},{"name":"bob"},{"name":"carol"}]'
 ```
 
 ## Why standalone (not packaged)
