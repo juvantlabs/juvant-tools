@@ -5,9 +5,42 @@ to the
 [handbook docs/repo-types/mcp-server.md](https://github.com/juvantlabs/handbook/blob/main/docs/repo-types/mcp-server.md)
 spec.
 
-## Usage
+## Three ways to invoke
 
-Interactive (recommended for manual scaffolding):
+### 1. CLI (interactive, recommended for humans)
+
+```bash
+python -m juvant_tools.cli scaffold mcp-server
+```
+
+### 2. CLI (flag-driven, scripted)
+
+```bash
+python -m juvant_tools.cli scaffold mcp-server \
+  --vendor finom --scope read \
+  --description "Finom Partner API banking MCP" \
+  --output ./finom-mcp-server
+```
+
+### 3. MCP tool (for AI agents)
+
+After `pip install 'juvant-tools[mcp]'`, run `juvant-tools-mcp` as an
+MCP stdio server. Agents call the `scaffold_mcp_server` tool with:
+
+```json
+{
+  "vendor": "finom",
+  "description": "Finom Partner API banking MCP",
+  "output_path": "/repos/juvantlabs/finom-mcp-server",
+  "scope": "read"
+}
+```
+
+The tool returns a structured dict — `{"status": "ok", "output_path": ..., "files_written": [...]}` on success, or `{"status": "error", "error": "output_path_exists" | "invalid_vendor_name" | ..., "hint": ...}` on failure. Agents branch on `error` codes rather than parsing text.
+
+## Usage details
+
+When you call the CLI interactively:
 
 ```bash
 python -m juvant_tools.cli scaffold mcp-server

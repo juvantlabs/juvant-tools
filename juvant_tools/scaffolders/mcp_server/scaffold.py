@@ -4,7 +4,15 @@ Reads the handbook docs/repo-types/mcp-server.md spec (in spirit; templates
 are pre-baked from it at scaffolder build time) and generates a conforming
 juvantlabs/<vendor>-mcp-server repo skeleton.
 
-v0.2 generates all 13 required files documented in the spec, including
+Surfaces:
+
+- Pure function `scaffold_mcp_server_repo(...)` — deterministic, no I/O
+  beyond the filesystem write, no `click` UX. Raises `ScaffoldError`
+  subclasses on validation/runtime failure. Used by:
+    - The CLI subcommand below (`juvant-tools scaffold mcp-server`)
+    - The MCP server in `juvant_tools.mcp_server`
+
+v0.2 generates all 15 required files documented in the spec, including
 the CI workflow (lint + test + audit + 3 grep-based defense-in-depth
 checks), the npm publish workflow (manual approval gate via GitHub
 Environments), the ESLint flat config (with the no-console-log rule),
@@ -15,6 +23,7 @@ from __future__ import annotations
 
 import re
 import sys
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
@@ -78,55 +87,104 @@ REQUIRED_OUTPUT_FILES = (
 )
 
 VENDOR_RE = re.compile(r"^[a-z][a-z0-9-]*$")
+VALID_SCOPES = ("read", "rw")
 
 
-@click.command()
-@click.option(
-    "--vendor",
-    prompt="Vendor name (lowercase, hyphenated — e.g. finom, aruba-fattura, m365-graph)",
-    help="Vendor identifier used in the repo name and package name.",
-)
-@click.option(
-    "--scope",
-    default="read",
-    show_default=True,
-    type=click.Choice(["read", "rw"]),
-    help="MCP scope qualifier — read or read+write.",
-)
-@click.option(
-    "--description",
-    prompt="One-line vendor description (used in README + package.json)",
-    help="Short description of what the vendor's API exposes.",
-)
-@click.option(
-    "--output",
-    default=None,
-    type=click.Path(file_okay=False, path_type=Path),
-    help="Output directory (default: ./<vendor>-mcp-server).",
-)
-def scaffold_mcp_server(
+# =====================================================================
+# Structured errors
+# =====================================================================
+
+class ScaffoldError(Exception):
+    """Base for all scaffolder errors. `code` is a stable string identifier
+    suitable for programmatic dispatch (e.g. by an MCP client / agent)."""
+    code: str = "scaffold_error"
+
+
+class InvalidVendorNameError(ScaffoldError):
+    code = "invalid_vendor_name"
+
+
+class InvalidScopeError(ScaffoldError):
+    code = "invalid_scope"
+
+
+class OutputPathExistsError(ScaffoldError):
+    code = "output_path_exists"
+
+    def __init__(self, output_path: Path):
+        super().__init__(f"{output_path} already exists; refusing to overwrite")
+        self.output_path = output_path
+
+
+class TemplateMissingError(ScaffoldError):
+    code = "template_missing"
+
+
+class ScaffoldValidationError(ScaffoldError):
+    """Post-render validation failure (required output file missing)."""
+    code = "validation_failed"
+
+    def __init__(self, missing: list[str]):
+        super().__init__(f"Scaffold validation failed: missing {missing}")
+        self.missing = missing
+
+
+# =====================================================================
+# Result
+# =====================================================================
+
+@dataclass
+class ScaffoldResult:
+    """Successful scaffold outcome."""
+    output_path: Path
+    repo_name: str
+    files_written: list[str] = field(default_factory=list)
+
+
+# =====================================================================
+# Pure function — used by both CLI and MCP entry points
+# =====================================================================
+
+def scaffold_mcp_server_repo(
     vendor: str,
     scope: str,
     description: str,
-    output: Path | None,
-) -> None:
-    """Scaffold a new juvantlabs/<vendor>-mcp-server repo.
+    output_dir: Path | None = None,
+) -> ScaffoldResult:
+    """Scaffold a juvantlabs/<vendor>-mcp-server repo skeleton.
 
-    Conforms to handbook docs/repo-types/mcp-server.md. Generates all
-    13 required files plus 6 .gitkeep markers for the empty directory
-    skeleton (src/auth, src/tools, src/client, src/types, tests/unit,
-    tests/integration).
+    Args:
+        vendor: lowercase, hyphenated identifier (e.g. "finom",
+            "aruba-fattura"). Must match `^[a-z][a-z0-9-]*$`.
+        scope: "read" or "rw". MCP scope qualifier.
+        description: one-line description of the vendor's API.
+        output_dir: where to write the new repo. If None, writes to
+            `./{vendor}-mcp-server` relative to current working directory.
+
+    Returns:
+        ScaffoldResult with output_path, repo_name, files_written.
+
+    Raises:
+        InvalidVendorNameError: vendor doesn't match the pattern.
+        InvalidScopeError: scope is not "read" or "rw".
+        OutputPathExistsError: target directory already exists.
+        TemplateMissingError: a literal template file is missing on disk
+            (corrupted install).
+        ScaffoldValidationError: post-render check found a required file
+            missing on disk.
     """
     if not VENDOR_RE.match(vendor):
-        raise click.BadParameter(
+        raise InvalidVendorNameError(
             "vendor must be lowercase, alphanumeric + hyphens, starting with a letter"
         )
+    if scope not in VALID_SCOPES:
+        raise InvalidScopeError(f"scope must be one of {list(VALID_SCOPES)}; got {scope!r}")
 
     repo_name = f"{vendor}-mcp-server"
-    output_path = output if output is not None else Path.cwd() / repo_name
+    output_path = output_dir if output_dir is not None else Path.cwd() / repo_name
 
     if output_path.exists():
-        raise click.ClickException(f"{output_path} already exists; refusing to overwrite")
+        raise OutputPathExistsError(output_path)
 
     today = date.today()
     context = {
@@ -164,7 +222,7 @@ def scaffold_mcp_server(
     for src_rel, dst_rel in LITERAL_FILES.items():
         src = templates_dir / src_rel
         if not src.exists():
-            raise click.ClickException(f"Template file missing: {src_rel}")
+            raise TemplateMissingError(f"Template file missing: {src_rel}")
         dst = output_path / dst_rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_text(src.read_text())
@@ -180,20 +238,84 @@ def scaffold_mcp_server(
     # 4. Validate required outputs
     missing = [f for f in REQUIRED_OUTPUT_FILES if not (output_path / f).exists()]
     if missing:
-        raise click.ClickException(f"Scaffold validation failed: missing {missing}")
+        raise ScaffoldValidationError(missing)
 
-    # 5. Report + next-steps
+    return ScaffoldResult(
+        output_path=output_path,
+        repo_name=repo_name,
+        files_written=written,
+    )
+
+
+# =====================================================================
+# CLI thin wrapper
+# =====================================================================
+
+@click.command()
+@click.option(
+    "--vendor",
+    prompt="Vendor name (lowercase, hyphenated — e.g. finom, aruba-fattura, m365-graph)",
+    help="Vendor identifier used in the repo name and package name.",
+)
+@click.option(
+    "--scope",
+    default="read",
+    show_default=True,
+    type=click.Choice(["read", "rw"]),
+    help="MCP scope qualifier — read or read+write.",
+)
+@click.option(
+    "--description",
+    prompt="One-line vendor description (used in README + package.json)",
+    help="Short description of what the vendor's API exposes.",
+)
+@click.option(
+    "--output",
+    default=None,
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Output directory (default: ./<vendor>-mcp-server).",
+)
+def scaffold_mcp_server(
+    vendor: str,
+    scope: str,
+    description: str,
+    output: Path | None,
+) -> None:
+    """Scaffold a new juvantlabs/<vendor>-mcp-server repo.
+
+    Conforms to handbook docs/repo-types/mcp-server.md. Generates all
+    15 required files plus 6 .gitkeep markers for the empty directory
+    skeleton (src/auth, src/tools, src/client, src/types, tests/unit,
+    tests/integration).
+    """
+    try:
+        result = scaffold_mcp_server_repo(
+            vendor=vendor,
+            scope=scope,
+            description=description,
+            output_dir=output,
+        )
+    except InvalidVendorNameError as e:
+        raise click.BadParameter(str(e), param_hint="--vendor") from e
+    except InvalidScopeError as e:
+        raise click.BadParameter(str(e), param_hint="--scope") from e
+    except OutputPathExistsError as e:
+        raise click.ClickException(str(e)) from e
+    except ScaffoldError as e:
+        raise click.ClickException(str(e)) from e
+
+    # Report + next-steps
     click.echo("")
-    click.echo(f"✓ Scaffolded {repo_name} at {output_path}")
-    click.echo(f"  ({len(written)} files)")
+    click.echo(f"✓ Scaffolded {result.repo_name} at {result.output_path}")
+    click.echo(f"  ({len(result.files_written)} files)")
     click.echo("")
     click.echo("Next steps:")
-    click.echo(f"  cd {output_path}")
+    click.echo(f"  cd {result.output_path}")
     click.echo("  npm install              # generates package-lock.json")
     click.echo('  git init && git add -A && git commit -m "init: scaffold per handbook mcp-server.md"')
-    click.echo(f"  gh repo create juvantlabs/{repo_name} --public \\")
+    click.echo(f"  gh repo create juvantlabs/{result.repo_name} --public \\")
     click.echo(f'    --description "{description}"')
-    click.echo(f"  git remote add origin git@github.com:juvantlabs/{repo_name}.git")
+    click.echo(f"  git remote add origin git@github.com:juvantlabs/{result.repo_name}.git")
     click.echo("  git branch -M main && git push -u origin main")
     click.echo("")
     click.echo("In GitHub repo settings:")

@@ -1,6 +1,6 @@
 [project]
 name = "juvant-tools"
-version = "0.2.0"
+version = "0.3.0"
 description = "Utility scripts and dev tools for the Juvant OS ecosystem (juvantlabs/*)"
 authors = [{name = "Juvant Srls"}]
 readme = "README.md"
@@ -26,9 +26,13 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0",
 ]
+mcp = [
+    "mcp>=1.0.0",
+]
 
 [project.scripts]
 juvant-tools = "juvant_tools.cli:cli"
+juvant-tools-mcp = "juvant_tools.mcp_server:main"
 
 [project.urls]
 Homepage = "https://github.com/juvantlabs/juvant-tools"

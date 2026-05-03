@@ -1,7 +1,10 @@
 """Tests for the mcp-server scaffolder.
 
-Smoke-test the scaffold produces all required files + the validation
-guard rejects bad input.
+Covers three surfaces:
+- The pure function `scaffold_mcp_server_repo` (raises typed errors).
+- The CLI subcommand `juvant-tools scaffold mcp-server` (smoke + edge cases).
+- The MCP tool handler `_scaffold_mcp_server_handler` (returns structured
+  dicts; runs without the `mcp` SDK installed).
 """
 
 from __future__ import annotations
@@ -12,9 +15,15 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from juvant_tools.mcp_server import _scaffold_mcp_server_handler
 from juvant_tools.scaffolders.mcp_server.scaffold import (
     REQUIRED_OUTPUT_FILES,
+    InvalidScopeError,
+    InvalidVendorNameError,
+    OutputPathExistsError,
+    ScaffoldResult,
     scaffold_mcp_server,
+    scaffold_mcp_server_repo,
 )
 
 
@@ -305,3 +314,152 @@ def test_scaffold_package_json_has_v02_scripts_and_deps(tmp_path: Path) -> None:
 
     dev_deps = package_json["devDependencies"]
     assert "@vitest/coverage-v8" in dev_deps
+
+
+# =====================================================================
+# v0.3 — pure function (scaffold_mcp_server_repo)
+# =====================================================================
+
+def test_pure_function_returns_scaffold_result(tmp_path: Path) -> None:
+    """The pure function returns a ScaffoldResult with output_path / repo_name /
+    files_written populated, matching the CLI's behavior."""
+    output = tmp_path / "test-mcp-server"
+    result = scaffold_mcp_server_repo(
+        vendor="test",
+        scope="read",
+        description="Test MCP server.",
+        output_dir=output,
+    )
+    assert isinstance(result, ScaffoldResult)
+    assert result.output_path == output
+    assert result.repo_name == "test-mcp-server"
+    assert len(result.files_written) >= len(REQUIRED_OUTPUT_FILES)
+    for required in REQUIRED_OUTPUT_FILES:
+        assert (output / required).exists()
+
+
+def test_pure_function_raises_invalid_vendor_name(tmp_path: Path) -> None:
+    with pytest.raises(InvalidVendorNameError) as exc_info:
+        scaffold_mcp_server_repo(
+            vendor="BadVendor",
+            scope="read",
+            description="x",
+            output_dir=tmp_path / "out",
+        )
+    assert exc_info.value.code == "invalid_vendor_name"
+
+
+def test_pure_function_raises_invalid_scope(tmp_path: Path) -> None:
+    with pytest.raises(InvalidScopeError) as exc_info:
+        scaffold_mcp_server_repo(
+            vendor="vendor",
+            scope="readwrite",  # invalid; valid are "read" or "rw"
+            description="x",
+            output_dir=tmp_path / "out",
+        )
+    assert exc_info.value.code == "invalid_scope"
+
+
+def test_pure_function_raises_output_path_exists(tmp_path: Path) -> None:
+    output = tmp_path / "existing"
+    output.mkdir()
+    with pytest.raises(OutputPathExistsError) as exc_info:
+        scaffold_mcp_server_repo(
+            vendor="vendor",
+            scope="read",
+            description="x",
+            output_dir=output,
+        )
+    assert exc_info.value.code == "output_path_exists"
+    assert exc_info.value.output_path == output
+
+
+# =====================================================================
+# v0.3 — MCP tool handler (_scaffold_mcp_server_handler)
+# =====================================================================
+
+def test_mcp_handler_returns_ok_dict_on_success(tmp_path: Path) -> None:
+    """Handler returns a structured dict with status='ok' on success."""
+    output = tmp_path / "vendor-mcp-server"
+    response = _scaffold_mcp_server_handler(
+        vendor="vendor",
+        description="Test.",
+        output_path=str(output),
+        scope="read",
+    )
+    assert response["status"] == "ok"
+    assert response["output_path"] == str(output)
+    assert response["repo_name"] == "vendor-mcp-server"
+    assert isinstance(response["files_written"], list)
+    assert len(response["files_written"]) >= len(REQUIRED_OUTPUT_FILES)
+
+
+def test_mcp_handler_returns_output_path_exists_error(tmp_path: Path) -> None:
+    """Handler returns status='error' / error='output_path_exists' when target
+    directory already exists. Critical for agent retry — agent reads the
+    error code instead of pattern-matching error text."""
+    output = tmp_path / "existing"
+    output.mkdir()
+    response = _scaffold_mcp_server_handler(
+        vendor="vendor",
+        description="Test.",
+        output_path=str(output),
+    )
+    assert response["status"] == "error"
+    assert response["error"] == "output_path_exists"
+    assert response["output_path"] == str(output)
+    assert "hint" in response
+
+
+def test_mcp_handler_returns_invalid_vendor_name_error(tmp_path: Path) -> None:
+    response = _scaffold_mcp_server_handler(
+        vendor="BadVendor",
+        description="Test.",
+        output_path=str(tmp_path / "out"),
+    )
+    assert response["status"] == "error"
+    assert response["error"] == "invalid_vendor_name"
+    assert response["vendor"] == "BadVendor"
+
+
+def test_mcp_handler_returns_invalid_scope_error(tmp_path: Path) -> None:
+    response = _scaffold_mcp_server_handler(
+        vendor="vendor",
+        description="Test.",
+        output_path=str(tmp_path / "out"),
+        scope="readwrite",
+    )
+    assert response["status"] == "error"
+    assert response["error"] == "invalid_scope"
+
+
+def test_mcp_handler_does_not_raise_on_any_error(tmp_path: Path) -> None:
+    """The handler must always return a dict, never raise. Agent contract:
+    a tool call's response is always JSON, never a thrown error from the SDK."""
+    # All error paths
+    output_existing = tmp_path / "existing"
+    output_existing.mkdir()
+
+    cases = [
+        # (vendor, description, output_path, scope) — all known-bad
+        ("vendor", "x", str(output_existing), "read"),    # output_path_exists
+        ("BadName", "x", str(tmp_path / "a"), "read"),    # invalid_vendor_name
+        ("vendor", "x", str(tmp_path / "b"), "weird"),    # invalid_scope
+    ]
+    for vendor, desc, path, scope in cases:
+        response = _scaffold_mcp_server_handler(
+            vendor=vendor, description=desc, output_path=path, scope=scope
+        )
+        assert isinstance(response, dict)
+        assert response["status"] == "error"
+
+
+def test_mcp_handler_module_imports_without_mcp_sdk() -> None:
+    """The juvant_tools.mcp_server module must import cleanly even when the
+    `mcp` SDK is not installed. The pure handler is decoupled from FastMCP
+    so testing it doesn't require the SDK."""
+    import juvant_tools.mcp_server as m
+    # Handler always present
+    assert callable(m._scaffold_mcp_server_handler)
+    # FastMCP wiring is gated; main() errors out only at runtime if SDK absent
+    assert callable(m.main)

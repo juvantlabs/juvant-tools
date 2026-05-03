@@ -7,12 +7,22 @@ spec at `juvantlabs/handbook`.
 
 ## Status
 
-Active. **One packaged subcommand** (the MCP server scaffolder, at v0.2 —
-generates all 15 spec-required files including CI workflows + ESLint
-flat config + vitest coverage thresholds; ships with three CI grep
-checks that pass green on a fresh scaffold) plus **six standalone
-debug/dev scripts** in `audio/`, `stt/`, `cdp/`, `grpc/`. Tools land
-via PR; new categories are cheap to add when there's a real need.
+Active. **Three entry points**:
+
+1. **CLI** — `juvant-tools <subcommand>` (after `pip install -e .`).
+   One subcommand today: `scaffold mcp-server` (v0.2: 15 spec files,
+   3 CI grep checks green on a fresh scaffold).
+2. **Standalone scripts** — `python3 <category>/<script>.py`. Six
+   scripts in `audio/`, `stt/`, `cdp/`, `grpc/`. Heavy dependencies
+   (Azure SDK, grpcio, ffmpeg) are installed only when needed.
+3. **MCP server** — `juvant-tools-mcp` (after `pip install '.[mcp]'`).
+   Exposes a curated subset of tools to AI agents over stdio JSON-RPC.
+   Today: `scaffold_mcp_server` only — agents can scaffold new MCP
+   servers themselves. More tools added pull-driven, when a real
+   agent has a real need.
+
+Tools land via PR; new categories are cheap to add when there's a real
+need.
 
 ## Quick start
 
@@ -43,6 +53,29 @@ python -m juvant_tools.cli scaffold mcp-server
 | Tool | Category | What it does |
 |---|---|---|
 | [`scaffold mcp-server`](juvant_tools/scaffolders/mcp_server/README.md) | MCP server scaffolding | Generates a new `juvantlabs/<vendor>-mcp-server` repo skeleton from the [handbook MCP server spec](https://github.com/juvantlabs/handbook/blob/main/docs/repo-types/mcp-server.md). All 15 required files (docs + license + tooling + CI workflows + ESLint flat config + vitest config), wired to pass the 8 spec-mandated CI checks (incl. stdout discipline, dead-code grep, README env-var accuracy) on a fresh scaffold. |
+
+### MCP server — `juvant-tools-mcp` (after `pip install '.[mcp]'`)
+
+Exposes a curated subset of tools to AI agents over stdio JSON-RPC. Each
+tool returns a structured dict with a stable `error` code on failure,
+so agents branch on `result.status == "error"` + `result.error` rather
+than parsing error text.
+
+| MCP tool | Maps to | Notes |
+|---|---|---|
+| `scaffold_mcp_server` | `scaffold mcp-server` CLI subcommand | Same logic; refuses to overwrite existing dirs (returns `error: "output_path_exists"`). Args: `vendor`, `description`, `output_path`, `scope`. |
+
+Bind from a Juvant OS instance via `.juvant/config.json`:
+
+```json
+{
+  "tools": {
+    "provider": "juvant-tools",
+    "mcp_server": "juvant-tools-mcp",
+    "scope": "rw"
+  }
+}
+```
 
 ### Standalone scripts — `python3 <category>/<script>.py`
 
