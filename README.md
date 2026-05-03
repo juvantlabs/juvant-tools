@@ -41,6 +41,29 @@ python -m juvant_tools.cli scaffold mcp-server
 |---|---|---|
 | [`scaffold mcp-server`](juvant_tools/scaffolders/mcp_server/README.md) | MCP server scaffolding | Generates a new `juvantlabs/<vendor>-mcp-server` repo skeleton from the [handbook MCP server spec](https://github.com/juvantlabs/handbook/blob/main/docs/repo-types/mcp-server.md). 11 required files in v0.1; CI workflows + ESLint config in v0.2. |
 
+## Repo layout — packaged vs. unpackaged tools
+
+The repo deliberately holds two kinds of tool side-by-side:
+
+- **`juvant_tools/`** (snake_case, the importable Python package) — code
+  we want versioned, importable, and invokable as `juvant-tools <subcmd>`.
+  Goes through `pyproject.toml`, earns CHANGELOG entries + semver, and
+  (eventually) a PyPI release. Today: just the scaffolders. Future
+  packaged tools land here as new subcommands.
+- **Top-level category directories** (e.g. `observability/`, `audit/`,
+  `disclosure-helpers/` — none yet, illustrative) — standalone scripts /
+  quick helpers run directly via `git clone` + `./category/script`. No
+  semver, no install step, possibly in different languages (bash, TS,
+  etc.). When a script earns import-by-others or subcommand status, it
+  migrates into `juvant_tools/`.
+
+The repo name (`juvant-tools`, kebab-case) and the package name
+(`juvant_tools`, snake_case) deliberately differ — standard Python
+disambiguation between "the project" and "the import path".
+
+This dual layout is codified in the
+[handbook toolbox spec](https://github.com/juvantlabs/handbook/blob/main/docs/repo-types/toolbox.md#packaged-vs-unpackaged-tools--the-dual-layout).
+
 ## Scope
 
 This toolbox is **OSS-shareable**, meaning:
