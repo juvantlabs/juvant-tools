@@ -463,3 +463,91 @@ def test_mcp_handler_module_imports_without_mcp_sdk() -> None:
     assert callable(m._scaffold_mcp_server_handler)
     # FastMCP wiring is gated; main() errors out only at runtime if SDK absent
     assert callable(m.main)
+
+
+# =====================================================================
+# v0.3.1 — regression tests for dep + CI fixes from FEAT-014 dogfood
+# =====================================================================
+
+def test_scaffold_dep_versions_compatible(tmp_path: Path) -> None:
+    """Regression test for v0.3.1.
+
+    The original v0.2 / v0.3 templates pinned @typescript-eslint v7 alongside
+    eslint v9 (peer-dep conflict — ESLint v9 needs ts-eslint v8+) and
+    vitest v1 (which has a transitive esbuild advisory GHSA-67mh-4wv8-2f99,
+    triggering 5 moderate vulnerabilities under `npm audit --audit-level=moderate`).
+    Both surfaced during the FEAT-014 m365-graph dogfood. Pin major versions
+    that are compatible with each other AND audit-clean as of 2026-05-03.
+    """
+    output = _scaffold(tmp_path)
+    package_json = json.loads((output / "package.json").read_text())
+    dev_deps = package_json["devDependencies"]
+
+    assert dev_deps["@typescript-eslint/eslint-plugin"].startswith("^8."), (
+        "ts-eslint plugin must be v8+ to be peer-compatible with eslint v9"
+    )
+    assert dev_deps["@typescript-eslint/parser"].startswith("^8."), (
+        "ts-eslint parser must be v8+ to be peer-compatible with eslint v9"
+    )
+    assert dev_deps["vitest"].startswith("^3."), (
+        "vitest must be v3+ to clear the esbuild advisory in v1"
+    )
+    assert dev_deps["@vitest/coverage-v8"].startswith("^3."), (
+        "@vitest/coverage-v8 major must match vitest major"
+    )
+
+
+def test_scaffold_lint_script_tolerates_empty_tests_dir(tmp_path: Path) -> None:
+    """Regression test for v0.3.1.
+
+    ESLint v9 fails when a CLI path matches zero files. On a fresh scaffold,
+    tests/ has only .gitkeep markers (no .ts) → 'tests' arg matches zero files
+    → exit 2. --no-error-on-unmatched-pattern restores v8 behavior.
+    """
+    output = _scaffold(tmp_path)
+    package_json = json.loads((output / "package.json").read_text())
+    lint_script = package_json["scripts"]["lint"]
+    assert "--no-error-on-unmatched-pattern" in lint_script
+
+
+def test_scaffold_test_scripts_pass_with_no_tests(tmp_path: Path) -> None:
+    """Regression test for v0.3.1.
+
+    vitest 3 'No test files found, exiting with code 1' on a fresh scaffold.
+    --passWithNoTests makes vitest exit cleanly when zero tests match.
+    """
+    output = _scaffold(tmp_path)
+    package_json = json.loads((output / "package.json").read_text())
+    assert "--passWithNoTests" in package_json["scripts"]["test:unit"]
+    assert "--passWithNoTests" in package_json["scripts"]["test:integration"]
+
+
+def test_scaffold_ci_gates_coverage_on_tests_exist(tmp_path: Path) -> None:
+    """Regression test for v0.3.1.
+
+    Coverage threshold (80% per spec) cannot be enforced on a scaffold with
+    zero tests — coverage is by definition 0% and would always fail. CI
+    splits 'Unit tests' (always runs) from 'Coverage (only when tests exist)'
+    (gated on hashFiles match). The 80% threshold in vitest.config.ts is
+    preserved; it kicks in only when there's something to measure.
+    """
+    output = _scaffold(tmp_path)
+    ci_yml = (output / ".github" / "workflows" / "ci.yml").read_text()
+
+    assert "Coverage (only when tests exist)" in ci_yml
+    assert "hashFiles('tests/unit/**/*.test.ts')" in ci_yml
+
+
+def test_scaffold_architecture_no_private_memory_leak(tmp_path: Path) -> None:
+    """Regression test for v0.3.1.
+
+    Earlier templates referenced 'feedback_no_write_in_juvant_os.md' (a
+    private memory file) inside ARCHITECTURE.md.j2, leaking the reference
+    into every scaffolded MCP server. OSS templates must not reference
+    private memory files.
+    """
+    output = _scaffold(tmp_path)
+    arch = (output / "ARCHITECTURE.md").read_text()
+    assert "feedback_" not in arch, (
+        "ARCHITECTURE.md must not reference private memory files (feedback_*.md)"
+    )
