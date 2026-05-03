@@ -1,0 +1,71 @@
+# Architecture — {{ vendor_titled }} MCP Server
+
+Design rationale for `{{ package_name }}`. Read alongside the
+[handbook MCP server spec](https://github.com/juvantlabs/handbook/blob/main/docs/repo-types/mcp-server.md)
+for the cross-cutting conventions; this doc covers what's specific to
+this server.
+
+## Purpose
+
+{{ vendor_description }}
+
+## Scope
+
+(Fill in: which vendor APIs are wrapped, which are explicitly out of scope.)
+
+### In scope
+
+- _(list tools shipped — read-only by default per `feedback_no_write_in_juvant_os.md`)_
+
+### Out of scope
+
+- Vendor write operations — performed by the user in the vendor UI; not
+  shipped as MCP tools.
+- _(other intentional exclusions, with rationale)_
+
+## Authentication
+
+(Fill in: how the server authenticates to the vendor API. Document scope
+qualifier from `agent_tool_matrix`. Note token storage location — never
+in `.juvant/config.json`, never logged. Reference `@napi-rs/keyring` if
+applicable.)
+
+## Threat model
+
+(Fill in: what attacker capabilities does this server defend against?
+Reference the
+[handbook security disclosure process](https://github.com/juvantlabs/handbook/blob/main/docs/security/disclosure-process.md)
+and the 12-item anti-pattern checklist from the
+[2026-05-03 ftaricano audit](https://gist.github.com/juvantlabs/a9fe0a76a23b0c1260b1e0ad3194a6da)
+that informs this repo's security posture.)
+
+### Universal Boundaries (per `SYSTEM_INVARIANTS.md` §4)
+
+- No general-purpose URL forwarder primitive.
+- No write tools beyond what's explicitly authorized.
+- Per-tenant subprocess (no shared cache state across tenants).
+- Stdout discipline: `console.error` only outside protocol path.
+
+## Performance characteristics
+
+(Fill in: typical request latency, max-file-size guard if applicable,
+streaming download / upload paths if applicable.)
+
+## Tool catalog
+
+| Tool | Underlying API call | Input shape | Output shape | Notes |
+|---|---|---|---|---|
+| _(stub)_ | | | | |
+
+## Dependencies
+
+| Dependency | Version | Why |
+|---|---|---|
+| `@modelcontextprotocol/sdk` | `^1.25.2` | MCP framing; ≥1.25.2 required (ReDoS + DNS rebinding fixes) |
+| _(vendor SDK or HTTP client)_ | | |
+
+## References
+
+- [Handbook MCP server spec](https://github.com/juvantlabs/handbook/blob/main/docs/repo-types/mcp-server.md)
+- [Handbook MCP abstract roles ADR](https://github.com/juvantlabs/handbook/blob/main/docs/adr/0002-mcp-abstract-roles.md)
+- [Juvant OS MCP_INVENTORY.md](https://github.com/juvantlabs/juvant-os/blob/main/docs/MCP_INVENTORY.md)

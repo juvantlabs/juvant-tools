@@ -7,10 +7,39 @@ spec at `juvantlabs/handbook`.
 
 ## Status
 
-**Scaffold-only.** First tool incoming via PR. The repo exists as the
-canonical home for `juvantlabs/*` toolbox-class artifacts so future
-contributions have a defined place to land — without having to set
-up the convention each time.
+**v0.1 — first tool shipped.** The
+[`scaffold mcp-server`](juvant_tools/scaffolders/mcp_server/README.md)
+command generates a new `juvantlabs/<vendor>-mcp-server` repo skeleton
+conforming to the [handbook MCP server spec](https://github.com/juvantlabs/handbook/blob/main/docs/repo-types/mcp-server.md).
+More tools land via PR.
+
+## Quick start
+
+This repo is currently distributed via `git clone` (no PyPI publish
+yet — see [Distribution](#distribution) below).
+
+```bash
+git clone https://github.com/juvantlabs/juvant-tools.git
+cd juvant-tools
+
+# (optional) virtual env
+python3 -m venv .venv
+source .venv/bin/activate
+
+# install in editable mode
+pip install -e .
+
+# run a scaffolder interactively
+juvant-tools scaffold mcp-server
+# or, without installing the entrypoint:
+python -m juvant_tools.cli scaffold mcp-server
+```
+
+## Tools shipped
+
+| Tool | Category | What it does |
+|---|---|---|
+| [`scaffold mcp-server`](juvant_tools/scaffolders/mcp_server/README.md) | MCP server scaffolding | Generates a new `juvantlabs/<vendor>-mcp-server` repo skeleton from the [handbook MCP server spec](https://github.com/juvantlabs/handbook/blob/main/docs/repo-types/mcp-server.md). 11 required files in v0.1; CI workflows + ESLint config in v0.2. |
 
 ## Scope
 
@@ -26,19 +55,33 @@ when running against Hardys-internal endpoints), see
 [`juvantio/hardys-dev-tools`](https://github.com/juvantio/hardys-dev-tools)
 (private) — separate repo, separate license posture, separate scope.
 
-## Planned tool categories (when populated)
-
-The structure will emerge as real tools land. Likely categories:
+## Planned tools (when the need arises)
 
 | Category | Example tools | Status |
 |---|---|---|
 | Juvant OS instance hygiene | Lint a per-company instance against the framework's spec; audit `agent_tool_matrix` vs. `MCP_INVENTORY.md`; check for surviving placeholders | not yet |
-| MCP server scaffolding | Generate a new `juvantlabs/<vendor>-mcp-server` skeleton from the [`mcp-server.md`](https://github.com/juvantlabs/handbook/blob/main/docs/repo-types/mcp-server.md) spec | not yet |
+| Library / framework / toolbox scaffolding | Same pattern as `scaffold mcp-server` for the other repo types | not yet |
 | Audit + disclosure helpers | Run a static-analysis audit on a community MCP server; produce a draft audit report per the [`audit-report-template.md`](https://github.com/juvantlabs/handbook/blob/main/docs/security/audit-report-template.md) | not yet |
 | Local dev workflow | Helpers for testing hooks against a local Turso file, simulating webhook deliveries against `juvant-os` instances, etc. | not yet |
 
 These are illustrative. Tools enter the toolbox when there's a real
 need — no premature creation.
+
+## Distribution
+
+**Currently `git clone` + editable install only.** No PyPI publish yet.
+The package name `juvant-tools` is reserved on PyPI but unpublished
+until the toolbox earns it (≥ 3 distinct users / production-critical /
+weekly use, per the [handbook toolbox spec](https://github.com/juvantlabs/handbook/blob/main/docs/repo-types/toolbox.md#promote-to-registry)).
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest                # run tests
+ruff check .          # lint
+mypy juvant_tools     # type-check
+```
 
 ## Contributing
 
