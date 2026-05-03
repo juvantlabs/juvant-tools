@@ -17,6 +17,8 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
+const LOG_LEVEL = process.env.MCP_SERVER_LOG_LEVEL ?? "info";
+
 const server = new Server(
   {
     name: "{{ package_name }}",
@@ -66,7 +68,7 @@ async function main(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   // No stdout writes here. Server listens on stdio until the client closes.
-  console.error("[{{ repo_name }}] running on stdio");
+  console.error(`[{{ repo_name }}] running on stdio (log level: ${LOG_LEVEL})`);
 }
 
 main().catch((err) => {

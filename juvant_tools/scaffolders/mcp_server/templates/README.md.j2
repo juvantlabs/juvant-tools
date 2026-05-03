@@ -20,14 +20,26 @@ npx {{ package_name }}
 
 (Once published to npm. During development, see the contributing guide.)
 
-## Configuration
+## Environment variables
 
-Environment variables required at runtime:
+Required:
 
 | Variable | Purpose |
 |---|---|
-| `<VENDOR>_API_KEY` | Vendor authentication (rename per provider) |
-| `MCP_SERVER_LOG_LEVEL` | Optional log level (default `info`) |
+| `<VENDOR>_API_KEY` | Vendor authentication (rename to your provider's actual key, e.g. `FINOM_API_KEY`). Wired up in `src/auth/` once you implement auth. |
+
+Optional:
+
+| Variable | Purpose |
+|---|---|
+| `MCP_SERVER_LOG_LEVEL` | Log level for diagnostics on stderr (default `info`). |
+
+> CI enforces that every variable documented in this section is actually
+> read from `process.env.<NAME>` somewhere in `src/` — placeholder names
+> containing `<>` are skipped. Documenting an env var without wiring it
+> up will fail the build (handbook anti-pattern S2).
+
+## Binding
 
 The Juvant OS adopter binds this server in `.juvant/config.json`:
 

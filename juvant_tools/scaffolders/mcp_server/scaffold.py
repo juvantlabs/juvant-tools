@@ -4,8 +4,11 @@ Reads the handbook docs/repo-types/mcp-server.md spec (in spirit; templates
 are pre-baked from it at scaffolder build time) and generates a conforming
 juvantlabs/<vendor>-mcp-server repo skeleton.
 
-v0.1 ships 11 of the 13 required files documented in the spec; v0.2 will
-add CI workflow + ESLint config.
+v0.2 generates all 13 required files documented in the spec, including
+the CI workflow (lint + test + audit + 3 grep-based defense-in-depth
+checks), the npm publish workflow (manual approval gate via GitHub
+Environments), the ESLint flat config (with the no-console-log rule),
+and the vitest config with the 80% coverage threshold from the spec.
 """
 
 from __future__ import annotations
@@ -19,7 +22,6 @@ import click
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 # Files written from templates (stripped of .j2 suffix on output).
-# Files NOT in this list are copied verbatim (no Jinja).
 TEMPLATE_FILES_J2 = {
     "README.md.j2",
     "LICENSE.j2",
@@ -31,10 +33,19 @@ TEMPLATE_FILES_J2 = {
     "src/index.ts.j2",
 }
 
+# Files copied verbatim (no Jinja substitution).
+# Keys are paths under templates/, values are paths under the scaffolded repo.
+# Some templates use a non-dotted name in templates/ to avoid Python packaging
+# tools dropping hidden files from sdists/wheels (e.g. `gitignore` →
+# `.gitignore`, `github/` → `.github/`).
 LITERAL_FILES = {
-    "tsconfig.json",
-    "gitignore",  # renamed to .gitignore on output
-    "CODEOWNERS",  # placed under .github/
+    "tsconfig.json": "tsconfig.json",
+    "gitignore": ".gitignore",
+    "CODEOWNERS": ".github/CODEOWNERS",
+    "github/workflows/ci.yml": ".github/workflows/ci.yml",
+    "github/workflows/publish.yml": ".github/workflows/publish.yml",
+    "eslint.config.mjs": "eslint.config.mjs",
+    "vitest.config.ts": "vitest.config.ts",
 }
 
 # Directories that should exist in the output even if empty (with .gitkeep).
@@ -59,6 +70,10 @@ REQUIRED_OUTPUT_FILES = (
     "CONTRIBUTING.md",
     "SECURITY.md",
     ".github/CODEOWNERS",
+    ".github/workflows/ci.yml",
+    ".github/workflows/publish.yml",
+    "eslint.config.mjs",
+    "vitest.config.ts",
     "src/index.ts",
 )
 
@@ -97,8 +112,10 @@ def scaffold_mcp_server(
 ) -> None:
     """Scaffold a new juvantlabs/<vendor>-mcp-server repo.
 
-    Conforms to handbook docs/repo-types/mcp-server.md. Generates 11 of
-    the 13 required files (CI workflow + ESLint config land in v0.2).
+    Conforms to handbook docs/repo-types/mcp-server.md. Generates all
+    13 required files plus 6 .gitkeep markers for the empty directory
+    skeleton (src/auth, src/tools, src/client, src/types, tests/unit,
+    tests/integration).
     """
     if not VENDOR_RE.match(vendor):
         raise click.BadParameter(
@@ -144,19 +161,14 @@ def scaffold_mcp_server(
         written.append(str(out_rel))
 
     # 2. Copy literal files (no Jinja substitution)
-    for literal in LITERAL_FILES:
-        src = templates_dir / literal
+    for src_rel, dst_rel in LITERAL_FILES.items():
+        src = templates_dir / src_rel
         if not src.exists():
-            raise click.ClickException(f"Template file missing: {literal}")
-        if literal == "gitignore":
-            dst = output_path / ".gitignore"
-        elif literal == "CODEOWNERS":
-            dst = output_path / ".github" / "CODEOWNERS"
-        else:
-            dst = output_path / literal
+            raise click.ClickException(f"Template file missing: {src_rel}")
+        dst = output_path / dst_rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_text(src.read_text())
-        written.append(str(dst.relative_to(output_path)))
+        written.append(dst_rel)
 
     # 3. Create empty directories with .gitkeep
     for empty_dir in EMPTY_DIRS:
@@ -177,12 +189,18 @@ def scaffold_mcp_server(
     click.echo("")
     click.echo("Next steps:")
     click.echo(f"  cd {output_path}")
-    click.echo("  npm install")
+    click.echo("  npm install              # generates package-lock.json")
     click.echo('  git init && git add -A && git commit -m "init: scaffold per handbook mcp-server.md"')
     click.echo(f"  gh repo create juvantlabs/{repo_name} --public \\")
     click.echo(f'    --description "{description}"')
-    click.echo("  git remote add origin git@github.com:juvantlabs/{repo_name}.git".format(repo_name=repo_name))
+    click.echo(f"  git remote add origin git@github.com:juvantlabs/{repo_name}.git")
     click.echo("  git branch -M main && git push -u origin main")
+    click.echo("")
+    click.echo("In GitHub repo settings:")
+    click.echo("  - Enable branch protection on `main` (require CI green + 1 review).")
+    click.echo("  - Configure the `production` environment with required reviewers,")
+    click.echo("    so the publish workflow needs manual approval before tagging to npm.")
+    click.echo("  - Add NPM_TOKEN as a repository secret (used by .github/workflows/publish.yml).")
     click.echo("")
     click.echo("Then implement your tools in src/tools/, wire auth in src/auth/,")
     click.echo("and follow the handbook spec at:")

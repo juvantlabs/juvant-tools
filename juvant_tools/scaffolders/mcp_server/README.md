@@ -32,46 +32,76 @@ python -m juvant_tools.cli scaffold mcp-server \
   --output ./finom-mcp-server
 ```
 
-## What it generates (v0.1)
+## What it generates (v0.2)
 
-Eleven files conforming to the spec's "Required files" section:
+Fifteen files conforming to the spec's "Required files" + "CI requirements"
+sections, plus six `.gitkeep` markers — 21 outputs total.
 
-- `README.md` — project overview, install, configuration, tool list (placeholder)
-- `LICENSE` — MIT, copyright Juvant Srls (canonical)
-- `package.json` — name, scripts, deps (`@modelcontextprotocol/sdk ^1.25.2`)
-- `tsconfig.json` — strict TypeScript config
-- `.gitignore` — comprehensive (secrets, key material, build artifacts)
-- `ARCHITECTURE.md` — design rationale stub with sections to fill
-- `CHANGELOG.md` — Keep a Changelog format, `[Unreleased]` initialized
-- `CONTRIBUTING.md` — pointer to handbook + repo-specific quick path
-- `SECURITY.md` — disclosure channels + SLOs (per handbook SECURITY-template.md)
-- `.github/CODEOWNERS` — placeholder
-- `src/index.ts` — minimal MCP server entry stub with handler skeletons
+### Documentation + license
+
+- `README.md` — project overview, install, **`## Environment variables`**
+  (parsed by the CI README-accuracy check), tool list (placeholder).
+- `LICENSE` — MIT, copyright Juvant Srls (canonical).
+- `ARCHITECTURE.md` — design rationale stub with sections to fill.
+- `CHANGELOG.md` — Keep a Changelog format, `[Unreleased]` initialized.
+- `CONTRIBUTING.md` — pointer to handbook + repo-specific quick path.
+- `SECURITY.md` — disclosure channels + SLOs (per handbook SECURITY-template.md).
+- `.github/CODEOWNERS` — placeholder.
+
+### Build + tooling
+
+- `package.json` — name, scripts (`build`, `dev`, `lint`, `typecheck`,
+  `test`, `test:unit`, `test:integration`, `audit`), deps
+  (`@modelcontextprotocol/sdk ^1.25.2`), dev-deps (vitest, ESLint v9,
+  TypeScript-ESLint, `@vitest/coverage-v8`).
+- `tsconfig.json` — strict TypeScript config (literal).
+- `eslint.config.mjs` — flat config (ESLint v9), `no-console: ["error",
+  { allow: ["error", "warn"] }]` enforces stdout discipline at lint time.
+- `vitest.config.ts` — coverage v8, ≥80% line/function/branch/statement
+  thresholds (per handbook spec).
+- `.gitignore` — comprehensive (secrets, key material, build artifacts).
+
+### CI
+
+- `.github/workflows/ci.yml` — runs on PR + push to `main`, covers all
+  8 spec checks:
+  1. ESLint
+  2. `tsc --noEmit`
+  3. Unit tests + coverage (vitest)
+  4. Integration tests (skipped if no `VENDOR_SANDBOX_TOKEN` secret)
+  5. `npm audit --audit-level=moderate`
+  6. **Stdout discipline grep** — `console.log\(` in `src/` → fail
+  7. **Dead-code grep** — exported `validate*/sanitize*/guard*/enforce*/assert*` symbols must be imported elsewhere in `src/`
+  8. **README env-var accuracy** — every var in README's `## Environment
+     variables` section must be referenced via `process.env.X` in `src/`
+     (placeholders containing `<>` and short acronyms are skipped)
+- `.github/workflows/publish.yml` — runs on tag push (`v*.*.*`), gated by
+  the `production` GitHub Environment for manual approval, publishes to
+  npm with provenance using `NPM_TOKEN` repo secret.
+
+### Source skeleton
+
+- `src/index.ts` — minimal MCP server stub with stdio transport,
+  tools list/dispatch handlers, reads `process.env.MCP_SERVER_LOG_LEVEL`
+  for log-level configuration. **No `console.log` anywhere** (neither
+  code nor comments) — keeps CI green from the first commit.
 
 Plus empty directories with `.gitkeep`:
 
 - `src/auth/`, `src/tools/`, `src/client/`, `src/types/`
 - `tests/unit/`, `tests/integration/`
 
-## What it does NOT generate (v0.1)
-
-Two files documented in the spec but pending v0.2 of the scaffolder:
-
-- `.github/workflows/ci.yml` — CI lint + test + audit + dead-code grep
-  + stdout discipline check
-- `.github/workflows/publish.yml` — npm publish on tag
-- `eslint.config.mjs` — strict TypeScript ESLint with no-console-log rule
-
-These are substantial templates that warrant care + a v0.1 dogfood pass.
-v0.2 of the scaffolder will produce them.
-
 ## Validation
 
-After scaffolding, the tool checks that all 11 required files exist.
+After scaffolding, the tool checks that all 15 required files exist.
 Failure raises `ClickException` and the partially-scaffolded directory
 is left in place for inspection.
 
-For `tsc --noEmit` validation + `npm install` dry-run, see v0.2.
+The 3 CI grep checks are designed to pass on a fresh scaffold (the README
+documents `<VENDOR>_API_KEY` as a placeholder — the `<>` skips it — and
+`MCP_SERVER_LOG_LEVEL` which `src/index.ts` actually reads). They start
+gating real changes the moment you wire up a real env var or export a
+security helper.
 
 ## Conformance to spec
 
@@ -86,12 +116,20 @@ The CLI prints a "Next steps" block. Summary:
 
 ```bash
 cd <vendor>-mcp-server
-npm install
+npm install                          # generates package-lock.json
 git init && git add -A && git commit -m "init: scaffold per handbook mcp-server.md"
 gh repo create juvantlabs/<vendor>-mcp-server --public --description "<description>"
 git remote add origin git@github.com:juvantlabs/<vendor>-mcp-server.git
 git branch -M main && git push -u origin main
 ```
+
+In the GitHub repo settings:
+
+- Enable branch protection on `main` (require CI green + 1 review).
+- Configure the `production` environment with required reviewers, so
+  the publish workflow needs manual approval before tagging to npm.
+- Add `NPM_TOKEN` as a repository secret (used by
+  `.github/workflows/publish.yml`).
 
 Then implement tools per the spec's "Tool design" + "Anti-patterns"
 sections.

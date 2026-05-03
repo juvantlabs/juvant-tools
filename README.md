@@ -41,7 +41,7 @@ python -m juvant_tools.cli scaffold mcp-server
 
 | Tool | Category | What it does |
 |---|---|---|
-| [`scaffold mcp-server`](juvant_tools/scaffolders/mcp_server/README.md) | MCP server scaffolding | Generates a new `juvantlabs/<vendor>-mcp-server` repo skeleton from the [handbook MCP server spec](https://github.com/juvantlabs/handbook/blob/main/docs/repo-types/mcp-server.md). 11 required files in v0.1; CI workflows + ESLint config in v0.2. |
+| [`scaffold mcp-server`](juvant_tools/scaffolders/mcp_server/README.md) | MCP server scaffolding | Generates a new `juvantlabs/<vendor>-mcp-server` repo skeleton from the [handbook MCP server spec](https://github.com/juvantlabs/handbook/blob/main/docs/repo-types/mcp-server.md). All 15 required files (docs + license + tooling + CI workflows + ESLint flat config + vitest config), wired to pass the 8 spec-mandated CI checks (incl. stdout discipline, dead-code grep, README env-var accuracy) on a fresh scaffold. |
 
 ### Standalone scripts — `python3 <category>/<script>.py`
 
