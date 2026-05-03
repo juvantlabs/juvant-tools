@@ -50,6 +50,7 @@ TEMPLATE_FILES_J2 = {
 LITERAL_FILES = {
     "tsconfig.json": "tsconfig.json",
     "gitignore": ".gitignore",
+    "env.example": ".env.example",
     "CODEOWNERS": ".github/CODEOWNERS",
     "github/workflows/ci.yml": ".github/workflows/ci.yml",
     "github/workflows/publish.yml": ".github/workflows/publish.yml",
@@ -74,6 +75,7 @@ REQUIRED_OUTPUT_FILES = (
     "package.json",
     "tsconfig.json",
     ".gitignore",
+    ".env.example",
     "ARCHITECTURE.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",

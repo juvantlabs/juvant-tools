@@ -551,3 +551,53 @@ def test_scaffold_architecture_no_private_memory_leak(tmp_path: Path) -> None:
     assert "feedback_" not in arch, (
         "ARCHITECTURE.md must not reference private memory files (feedback_*.md)"
     )
+
+
+# =====================================================================
+# v0.3.2 — regression tests for env.example + --env-file dev script
+# =====================================================================
+
+def test_scaffold_includes_env_example(tmp_path: Path) -> None:
+    """Regression test for v0.3.2.
+
+    Generated repos need a `.env.example` template so developers can
+    `cp .env.example .env.local` per the README's Local development
+    section. v0.3.1 had this in M365 but not in the scaffolder template.
+    """
+    output = _scaffold(tmp_path)
+    env_example = output / ".env.example"
+    assert env_example.exists(), ".env.example must be generated"
+    contents = env_example.read_text()
+    assert "MCP_SERVER_LOG_LEVEL" in contents, (
+        ".env.example should at minimum document MCP_SERVER_LOG_LEVEL"
+    )
+
+
+def test_scaffold_gitignore_negates_env_example(tmp_path: Path) -> None:
+    """Regression test for v0.3.2.
+
+    The `*.env.*` ignore pattern (catch-all for `.env.production` and
+    similar variants) inadvertently swallows `.env.example`. The
+    template must include `!.env.example` so the public template stays
+    committable.
+    """
+    output = _scaffold(tmp_path)
+    gitignore = (output / ".gitignore").read_text()
+    assert "!.env.example" in gitignore, (
+        ".gitignore must negate .env.example so it stays committable"
+    )
+
+
+def test_scaffold_dev_script_loads_env_local(tmp_path: Path) -> None:
+    """Regression test for v0.3.2.
+
+    The `dev` script must load `.env.local` via Node's `--env-file` flag
+    so developers don't need to `source .env.local` manually before each
+    `npm run dev`.
+    """
+    output = _scaffold(tmp_path)
+    package_json = json.loads((output / "package.json").read_text())
+    dev_script = package_json["scripts"]["dev"]
+    assert "--env-file=.env.local" in dev_script, (
+        "dev script must use Node's --env-file=.env.local flag"
+    )
