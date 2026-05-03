@@ -37,9 +37,21 @@ python -m juvant_tools.cli scaffold mcp-server
 
 ## Tools shipped
 
+### Packaged — `juvant-tools <subcommand>` (after `pip install -e .`)
+
 | Tool | Category | What it does |
 |---|---|---|
 | [`scaffold mcp-server`](juvant_tools/scaffolders/mcp_server/README.md) | MCP server scaffolding | Generates a new `juvantlabs/<vendor>-mcp-server` repo skeleton from the [handbook MCP server spec](https://github.com/juvantlabs/handbook/blob/main/docs/repo-types/mcp-server.md). 11 required files in v0.1; CI workflows + ESLint config in v0.2. |
+
+### Standalone scripts — `python3 <category>/<script>.py`
+
+| Script | Category | What it does |
+|---|---|---|
+| [`audio/video_to_audio.py`](audio/README.md) | Audio | ffmpeg wrapper — extract audio from a video file as WAV / MP3 / AAC / raw PCM 16k mono. |
+| [`audio/raw_pcm_to_wav.py`](audio/README.md) | Audio | Convert a raw PCM capture (8-byte header + Int16 samples) into a WAV file with silence trim, mono downmix, and resampling. |
+| [`stt/azure_stt.py`](stt/README.md) | STT | Transcribe any audio/video file using Azure Speech SDK with optional speaker diarization. Streams results to file as they arrive. |
+| [`cdp/http_spy.py`](cdp/README.md) | CDP | Chrome DevTools Protocol HTTP spy — capture HTTP requests/responses on a live browser tab, filtered by URL substring, with UUID/ID extraction from JSON bodies. |
+| [`cdp/websocket_spy.py`](cdp/README.md) | CDP | Chrome DevTools Protocol WebSocket spy — capture every WS frame (incl. iframe sub-targets) on a live browser tab. UTF-8 / JSON auto-decode; hex fallback for binary. |
 
 ## Repo layout — packaged vs. unpackaged tools
 
