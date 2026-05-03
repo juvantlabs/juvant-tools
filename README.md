@@ -52,6 +52,7 @@ python -m juvant_tools.cli scaffold mcp-server
 | [`stt/azure_stt.py`](stt/README.md) | STT | Transcribe any audio/video file using Azure Speech SDK with optional speaker diarization. Streams results to file as they arrive. |
 | [`cdp/http_spy.py`](cdp/README.md) | CDP | Chrome DevTools Protocol HTTP spy — capture HTTP requests/responses on a live browser tab, filtered by URL substring, with UUID/ID extraction from JSON bodies. |
 | [`cdp/websocket_spy.py`](cdp/README.md) | CDP | Chrome DevTools Protocol WebSocket spy — capture every WS frame (incl. iframe sub-targets) on a live browser tab. UTF-8 / JSON auto-decode; hex fallback for binary. |
+| [`grpc/explorer.py`](grpc/README.md) | gRPC | Interactive gRPC explorer — connect to a server, discover services via reflection or local `.proto` files, pick a method, edit the request JSON in your editor, invoke, see the response. Unary + server-streaming. |
 
 ## Repo layout — packaged vs. unpackaged tools
 
