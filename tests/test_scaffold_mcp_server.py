@@ -588,6 +588,30 @@ def test_scaffold_gitignore_negates_env_example(tmp_path: Path) -> None:
     )
 
 
+def test_scaffold_index_ts_uses_symlink_safe_main_guard(tmp_path: Path) -> None:
+    """Regression test for v0.3.3.
+
+    The naive `main().catch(...)` at module load works for direct + npx
+    invocation but breaks testability (importing src/index.ts from a
+    test triggers main()). The previous heuristic guard
+    (`process.argv[1].endsWith("dist/index.js")`) failed for npm bin
+    invocation, where argv[1] is the `.bin/<name>` SYMLINK path with
+    no .js suffix. Surfaced by the m365-graph-mcp-server v0.1.0 ship —
+    `npx ...` silently did nothing because the guard returned false.
+
+    The scaffolder template should produce src/index.ts with a
+    symlink-safe guard using realpathSync + pathToFileURL.
+    """
+    output = _scaffold(tmp_path)
+    index_ts = (output / "src" / "index.ts").read_text()
+    assert "realpathSync" in index_ts, (
+        "src/index.ts must use realpathSync to resolve the npm bin symlink"
+    )
+    assert "pathToFileURL" in index_ts, (
+        "src/index.ts must use pathToFileURL to compare against import.meta.url"
+    )
+
+
 def test_scaffold_dev_script_loads_env_local(tmp_path: Path) -> None:
     """Regression test for v0.3.2.
 

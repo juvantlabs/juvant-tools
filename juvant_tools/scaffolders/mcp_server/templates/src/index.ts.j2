@@ -10,6 +10,9 @@
  * rules enforce this in `juvantlabs/*-mcp-server` repos.
  */
 
+import { realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -71,7 +74,34 @@ async function main(): Promise<void> {
   console.error(`[{{ repo_name }}] running on stdio (log level: ${LOG_LEVEL})`);
 }
 
-main().catch((err) => {
-  console.error("[{{ repo_name }}] fatal:", err);
-  process.exit(1);
-});
+/**
+ * Detect whether this module is the entry point (vs imported by tests
+ * or other code). When invoked via the npm `bin` symlink (npm puts
+ * the package's bin into `node_modules/.bin/<name>` as a symlink to
+ * `dist/index.js`), `process.argv[1]` is the symlink path, not the
+ * underlying file. Resolve symlinks via `realpathSync` so the
+ * comparison against `import.meta.url` matches in all three cases:
+ *
+ *   - Bin invocation:  `npx {{ package_name }}`
+ *   - Direct:          `node dist/index.js`
+ *   - Dev (tsx):       `tsx src/index.ts`
+ *
+ * Also resolves macOS's `/tmp` → `/private/tmp` symlink, which would
+ * otherwise produce a false-negative under direct invocation in /tmp.
+ */
+function isInvokedAsMain(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    const realPath = realpathSync(process.argv[1]);
+    return import.meta.url === pathToFileURL(realPath).href;
+  } catch {
+    return false;
+  }
+}
+
+if (isInvokedAsMain()) {
+  main().catch((err) => {
+    console.error("[{{ repo_name }}] fatal:", err);
+    process.exit(1);
+  });
+}

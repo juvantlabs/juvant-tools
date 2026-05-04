@@ -1,6 +1,6 @@
 [project]
 name = "juvant-tools"
-version = "0.3.2"
+version = "0.3.3"
 description = "Utility scripts and dev tools for the Juvant OS ecosystem (juvantlabs/*)"
 authors = [{name = "Juvant Srls"}]
 readme = "README.md"
