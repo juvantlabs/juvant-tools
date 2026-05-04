@@ -588,6 +588,42 @@ def test_scaffold_gitignore_negates_env_example(tmp_path: Path) -> None:
     )
 
 
+def test_scaffold_publish_workflow_uses_trusted_publishing(tmp_path: Path) -> None:
+    """Regression test for v0.3.4.
+
+    The scaffolder previously generated publish.yml that used
+    NPM_TOKEN env var for npm publish auth (granular access token).
+    Migrated to npm Trusted Publishing (OIDC-based) on 2026-05-04
+    after the m365-graph-mcp-server v0.1.2 → v0.1.3 ship validated
+    the pattern end-to-end. Trusted Publishing requires:
+      - id-token: write permission on the job
+      - npm ≥ 11.5.1 (npm 10 doesn't honor OIDC for publish auth, only
+        for provenance signing — produces a quiet 404 when token is absent)
+      - No NODE_AUTH_TOKEN env on the publish step
+    """
+    output = _scaffold(tmp_path)
+    publish_yml = (output / ".github" / "workflows" / "publish.yml").read_text()
+
+    # No NPM_TOKEN secret usage — publish uses OIDC, not a static secret.
+    # NPM_TOKEN / NODE_AUTH_TOKEN can appear in comments documenting the
+    # migration rationale; the test guards against the actual injection
+    # pattern (referencing the GitHub secret).
+    assert "secrets.NPM_TOKEN" not in publish_yml, (
+        "publish.yml must not reference secrets.NPM_TOKEN — Trusted Publishing uses OIDC"
+    )
+
+    # Must explicitly upgrade npm because Node 20 ships with npm 10 which
+    # doesn't support OIDC for publish auth.
+    assert "npm install -g npm@latest" in publish_yml, (
+        "publish.yml must upgrade npm before publish (Trusted Publishing needs ≥ 11.5.1)"
+    )
+
+    # id-token: write is needed for both provenance signing AND OIDC publish.
+    assert "id-token: write" in publish_yml, (
+        "publish.yml must grant id-token:write for OIDC-based Trusted Publishing"
+    )
+
+
 def test_scaffold_index_ts_uses_symlink_safe_main_guard(tmp_path: Path) -> None:
     """Regression test for v0.3.3.
 
