@@ -53,11 +53,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 // Tool dispatch — handle calls per tool name.
 // =====================================================================
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+  const { name } = request.params;
 
   switch (name) {
-    // case "<vendor>:<tool-name>":
+    // case "<vendor>:<tool-name>": {
+    //   const args = request.params.arguments;
     //   return await handleToolName(args);
+    // }
 
     default:
       throw new Error(`Unknown tool: ${name}`);
