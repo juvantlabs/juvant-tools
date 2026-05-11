@@ -12,8 +12,8 @@ Active. **Three entry points**:
 1. **CLI** — `juvant-tools <subcommand>` (after `pip install -e .`).
    One subcommand today: `scaffold mcp-server` (v0.2: 15 spec files,
    3 CI grep checks green on a fresh scaffold).
-2. **Standalone scripts** — `python3 <category>/<script>.py`. Six
-   scripts in `audio/`, `stt/`, `cdp/`, `grpc/`. Heavy dependencies
+2. **Standalone scripts** — `python3 <category>/<script>.py`. Eight
+   scripts in `audio/`, `stt/`, `cdp/`, `grpc/`, `docx/`. Heavy dependencies
    (Azure SDK, grpcio, ffmpeg) are installed only when needed.
 3. **MCP server** — `juvant-tools-mcp` (after `pip install '.[mcp]'`).
    Exposes a curated subset of tools to AI agents over stdio JSON-RPC.
@@ -87,6 +87,8 @@ Bind from a Juvant OS instance via `.juvant/config.json`:
 | [`cdp/http_spy.py`](cdp/README.md) | CDP | Chrome DevTools Protocol HTTP spy — capture HTTP requests/responses on a live browser tab, filtered by URL substring, with UUID/ID extraction from JSON bodies. |
 | [`cdp/websocket_spy.py`](cdp/README.md) | CDP | Chrome DevTools Protocol WebSocket spy — capture every WS frame (incl. iframe sub-targets) on a live browser tab. UTF-8 / JSON auto-decode; hex fallback for binary. |
 | [`grpc/explorer.py`](grpc/README.md) | gRPC | Interactive gRPC explorer — connect to a server, discover services via reflection (auto-fallback to `--proto-dir`), pick a method, edit the request JSON in your editor, invoke, pretty-print the response. All four method kinds: unary-unary, server-streaming, client-streaming, bidi-streaming. |
+| [`docx/md_to_docx.py`](docx/README.md) | DOCX | Render a Markdown file into a Word DOCX using a letterhead template (header/footer/logo preserved). Brand-customisable via optional `--config` TOML (fonts, colours, heading sizes); neutral defaults when omitted. |
+| [`docx/docx_inspect.py`](docx/README.md) | DOCX | Dump the structure of any DOCX file: header/footer drawings, paragraph-style histogram, heading outline, table layout, page setup. Pure inspection — no writes. |
 
 ## Repo layout — packaged vs. unpackaged tools
 
