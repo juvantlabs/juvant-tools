@@ -13,8 +13,9 @@ table shading) so it works as a generic MD→DOCX tool on any letterhead. For
 branded output, pass `--config` pointing to a TOML file overriding any of:
 
     [fonts]
-    body = "Inter"
-    mono = "JetBrains Mono"
+    body    = "Inter"
+    heading = "DM Serif Display"   # optional — falls back to body if omitted
+    mono    = "JetBrains Mono"
 
     [colors]                       # hex strings, no '#' prefix
     primary           = "2E86AB"   # H1/H2, accents, table header bg, list markers, HR & H1 borders, inline code
@@ -65,6 +66,7 @@ from markdown_it import MarkdownIt
 @dataclass(frozen=True)
 class BrandSpec:
     body_font: str
+    heading_font: str
     mono_font: str
     primary: RGBColor
     primary_hex: str
@@ -81,6 +83,7 @@ class BrandSpec:
 NEUTRAL_DEFAULTS: dict = {
     "fonts": {
         "body": "Calibri",
+        "heading": "Calibri",
         "mono": "Consolas",
     },
     "colors": {
@@ -126,6 +129,7 @@ def load_brand(config_path: Path | None) -> BrandSpec:
     primary_hex = spec["colors"]["primary"].lstrip("#").upper()
     return BrandSpec(
         body_font=spec["fonts"]["body"],
+        heading_font=spec["fonts"].get("heading", spec["fonts"]["body"]),
         mono_font=spec["fonts"]["mono"],
         primary=_hex_to_rgb(primary_hex),
         primary_hex=primary_hex,
@@ -263,19 +267,21 @@ def render_inline_into_paragraph(
     *,
     base_size: int = 11,
     base_color: RGBColor | None = None,
+    font_override: str | None = None,
 ) -> None:
     if inline_token is None or not inline_token.children:
         return
+    text_font = font_override if font_override is not None else brand.body_font
     bold = False
     italic = False
     for tok in inline_token.children:
         t = tok.type
         if t == "text":
             r = p.add_run(tok.content)
-            set_run(r, font=brand.body_font, size=base_size, color=base_color, bold=bold, italic=italic)
+            set_run(r, font=text_font, size=base_size, color=base_color, bold=bold, italic=italic)
         elif t == "softbreak":
             r = p.add_run(" ")
-            set_run(r, font=brand.body_font, size=base_size, color=base_color)
+            set_run(r, font=text_font, size=base_size, color=base_color)
         elif t == "hardbreak":
             r = p.add_run()
             r.add_break()
@@ -295,7 +301,7 @@ def render_inline_into_paragraph(
         else:
             if tok.content:
                 r = p.add_run(tok.content)
-                set_run(r, font=brand.body_font, size=base_size, color=base_color, bold=bold, italic=italic)
+                set_run(r, font=text_font, size=base_size, color=base_color, bold=bold, italic=italic)
 
 
 # ----------------------------------------------------------------------------
@@ -344,7 +350,10 @@ def render(md_text: str, letterhead_path: Path, brand: BrandSpec):
             if level == 1:
                 p.alignment = WD_ALIGN_PARAGRAPH.LEFT
                 add_bottom_border(p, color_hex=brand.primary_hex)
-            render_inline_into_paragraph(p, inline, brand, base_size=size, base_color=color)
+            render_inline_into_paragraph(
+                p, inline, brand, base_size=size, base_color=color,
+                font_override=brand.heading_font,
+            )
             for r in p.runs:
                 r.bold = True
             i += 3
