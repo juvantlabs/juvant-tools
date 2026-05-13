@@ -43,8 +43,9 @@ neutral values.
 
 ```toml
 [fonts]
-body = "Inter"
-mono = "JetBrains Mono"
+body    = "Inter"
+heading = "DM Serif Display"   # optional — falls back to body if omitted
+mono    = "JetBrains Mono"
 
 [colors]                       # hex strings, no '#' prefix
 primary           = "2E86AB"   # H1/H2 headings, accents, table header bg, list markers, HR & H1 borders, inline code
@@ -67,6 +68,7 @@ If `--config` is omitted, the renderer uses:
 | Section | Key | Default |
 |---|---|---|
 | fonts | body | `Calibri` |
+| fonts | heading | same as `body` (falls back if omitted) |
 | fonts | mono | `Consolas` |
 | colors | primary | `000000` |
 | colors | body | `000000` |
