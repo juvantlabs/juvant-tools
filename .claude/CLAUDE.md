@@ -1,0 +1,9 @@
+# Project juvant-tools of Juvant Srls
+
+This repository belongs to project `juvant-tools`. The company's rules apply here.
+
+- **Memory** for this project lives in the company repo, in `memory/projects/juvant-tools/` (card, decisions, knowledge, journal), not here. If the company repo is checked out next to this one, read the card before starting and propose decisions and facts for it; otherwise list them at the end of the session for the Chief of Staff to record.
+- **Hard limits** are the same as in the company repo and enforced by the same hooks: outbound is draft-only, no payments or invoice issuing, no secrets in files or commands, destructive changes ask the CEO.
+<!-- juvant-os:shared -->
+- **This repository is shared with everyone (public repository).** Everything written here is read by them: write as for an external reader, never copy the company's memory, internal notes or opinions about partners here. It is the company's own repository: work on a branch and open a PR; the CEO confirms every merge, and pushes to the default branch are blocked. The hooks enforce it.
+<!-- /juvant-os:shared -->
